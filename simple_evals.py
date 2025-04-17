@@ -1,8 +1,8 @@
 import json
 import argparse
 import pandas as pd
+import os
 from . import common
-from .browsecomp_eval import BrowseCompEval
 from .drop_eval import DropEval
 from .gpqa_eval import GPQAEval
 from .humaneval_eval import HumanEval
@@ -31,11 +31,59 @@ def main():
     parser.add_argument(
         "--examples", type=int, help="Number of examples to use (overrides default)"
     )
-
+    parser.add_argument(
+        "--task", type=str,default="math" , 
+        help="Task to run math, gpqa, mgsm, drop, humaneval, simpleqa, mmlu"
+    )
+    parser.add_argument(
+        "--reasoning_max_gen_tokens", type=int, default=24576)
+    parser.add_argument(
+        "--output_dir", type=str, default="./results"
+    )
+    parser.add_argument(
+        "--api-key", type=str, default="token-abc123",
+    )
+    parser.add_argument(
+        "--port", type=int, default=8000,
+    )
+    parser.add_argument(
+        "--temperature", type=float, default=0,
+    )
     args = parser.parse_args()
-
+    
     models = {
-        # reasonsing models
+        # chatgpt models:
+       "meta-llama/Llama-3.1-8B-Instruct": ChatCompletionSampler(
+            model="meta-llama/Llama-3.1-8B-Instruct",
+            use_predefined_server=True,
+            api_key=args.api_key,
+            port=args.port,
+            temperature=args.temperature,
+            
+        ),
+        "meta-llama/Llama-3.1-70B-Instruct": ChatCompletionSampler(
+            model="meta-llama/Llama-3.1-70B-Instruct",
+            use_predefined_server=True,
+            api_key=args.api_key,
+            port=args.port,
+            temperature=args.temperature, 
+        ),
+        "deepseek-ai/DeepSeek-R1-Distill-Llama-8B": ChatCompletionSampler(
+            model="deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
+            use_predefined_server=True,
+            api_key=args.api_key,
+            port=args.port,
+            max_tokens=args.reasoning_max_gen_tokens,
+            temperature=args.temperature, 
+        ),
+        "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": ChatCompletionSampler(
+            model="deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+            use_predefined_server=True,
+            api_key=args.api_key,
+            port=args.port,
+            max_tokens=args.reasoning_max_gen_tokens,
+            temperature=args.temperature, 
+        ),
         "o1": OChatCompletionSampler(
             model="o1",
         ),
@@ -57,55 +105,35 @@ def main():
             model="o3-mini",
             reasoning_effort="low",
         ),
-        # gpt 4.1 models
-        "gpt-4.1": ChatCompletionSampler(
-            model="gpt-4.1-2025-04-14",
-            system_message=OPENAI_SYSTEM_MESSAGE_API,
-            max_tokens=2048,
-        ),
-        "gpt-4.1-mini": ChatCompletionSampler(
-            model="gpt-4.1-mini-2025-04-14",
-            system_message=OPENAI_SYSTEM_MESSAGE_API,
-            max_tokens=2048,
-        ),
-        "gpt-4.1-nano": ChatCompletionSampler(
-            model="gpt-4.1-nano-2025-04-14",
-            system_message=OPENAI_SYSTEM_MESSAGE_API,
-            max_tokens=2048,
-        ),
-        # gpt 4o models
-        "gpt-4o": ChatCompletionSampler(
-            model="gpt-4o",
-            system_message=OPENAI_SYSTEM_MESSAGE_API,
-            max_tokens=2048,
-        ),
-        "gpt-4o-mini": ChatCompletionSampler(
-            model="gpt-4o-mini-2024-07-18",
-            system_message=OPENAI_SYSTEM_MESSAGE_API,
-            max_tokens=2048,
-        ),
-        # gpt 4.5 models
-        "gpt-4.5-preview": ChatCompletionSampler(
-            model="gpt-4.5-preview-2025-02-27",
-            system_message=OPENAI_SYSTEM_MESSAGE_API,
-            max_tokens=2048,
-        ),
-        # gpt 4 turbo models 
-         "gpt-4-turbo-2024-04-09": ChatCompletionSampler(
+        "gpt-4-turbo-2024-04-09_assistant": ChatCompletionSampler(
             model="gpt-4-turbo-2024-04-09",
             system_message=OPENAI_SYSTEM_MESSAGE_API,
-        ),
-        # chatgpt models:
-        "chatgpt-4o-latest": ChatCompletionSampler(
-            model="chatgpt-4o-latest",
-            system_message=OPENAI_SYSTEM_MESSAGE_CHATGPT,
-            max_tokens=2048,
         ),
         "gpt-4-turbo-2024-04-09_chatgpt": ChatCompletionSampler(
             model="gpt-4-turbo-2024-04-09",
             system_message=OPENAI_SYSTEM_MESSAGE_CHATGPT,
         ),
-       # claude models:
+        "gpt-4o_assistant": ChatCompletionSampler(
+            model="gpt-4o",
+            system_message=OPENAI_SYSTEM_MESSAGE_API,
+            max_tokens=2048,
+        ),
+        "gpt-4o_chatgpt": ChatCompletionSampler(
+            model="gpt-4o",
+            system_message=OPENAI_SYSTEM_MESSAGE_CHATGPT,
+            max_tokens=2048,
+        ),
+        "gpt-4o-mini-2024-07-18": ChatCompletionSampler(
+            model="gpt-4o-mini-2024-07-18",
+            system_message=OPENAI_SYSTEM_MESSAGE_API,
+            max_tokens=2048,
+        ),
+        "gpt-4.5-preview-2025-02-27": ChatCompletionSampler(
+            model="gpt-4.5-preview-2025-02-27",
+            system_message=OPENAI_SYSTEM_MESSAGE_API,
+            max_tokens=2048,
+        ), 
+        # claude models:
         "claude-3-opus-20240229_empty": ClaudeCompletionSampler(
             model="claude-3-opus-20240229",
             system_message=CLAUDE_SYSTEM_MESSAGE_LMSYS,
@@ -140,11 +168,13 @@ def main():
                 return MathEval(
                     equality_checker=equality_checker,
                     num_examples=num_examples,
-                    n_repeats=1 if debug_mode else 10,
+                    n_repeats=1, # if debug_mode else 10,
+                    split="math_500_test",
                 )
             case "gpqa":
                 return GPQAEval(
-                    n_repeats=1 if debug_mode else 10, num_examples=num_examples
+                    n_repeats=1, #if debug_mode else 10, 
+                    num_examples=num_examples
                 )
             case "mgsm":
                 return MGSMEval(num_examples_per_lang=10 if debug_mode else 250)
@@ -154,40 +184,43 @@ def main():
                     train_samples_per_prompt=3,
                 )
             case "humaneval":
-                return HumanEval(num_examples=10 if debug_mode else num_examples)
+                return HumanEval(num_examples=10 if debug_mode else num_examples,
+                                num_samples_per_task=1, ks_passes=[1])
             case "simpleqa":
                 return SimpleQAEval(
-                    grader_model=grading_sampler,
-                    num_examples=10 if debug_mode else num_examples,
-                )
-            case "browsecomp":
-                return BrowseCompEval(
                     grader_model=grading_sampler,
                     num_examples=10 if debug_mode else num_examples,
                 )
             case _:
                 raise Exception(f"Unrecognized eval type: {eval_name}")
 
-    evals = {
-        eval_name: get_evals(eval_name, args.debug)
-        for eval_name in ["simpleqa", "mmlu", "math", "gpqa", "mgsm", "drop", "humaneval", "browsecomp"]
-    }
-    print(evals)
+    # evals = {
+    #     eval_name: get_evals(eval_name, args.debug)
+    #     for eval_name in ["math", "gpqa", #"mgsm", "drop", "humaneval", "simpleqa", "mmlu"]
+    # }
+    evals = {args.task: get_evals(args.task, args.debug)}
     debug_suffix = "_DEBUG" if args.debug else ""
     print(debug_suffix)
+    os.environ["debug"] = "1" if args.debug else "0"
     mergekey2resultpath = {}
+
+    if not os.path.exists(args.output_dir):
+        os.mkdir(args.output_dir)
+    
     for model_name, sampler in models.items():
         for eval_name, eval_obj in evals.items():
             result = eval_obj(sampler)
             # ^^^ how to use a sampler
-            file_stem = f"{eval_name}_{model_name}"
-            report_filename = f"/tmp/{file_stem}{debug_suffix}.html"
+            model_base_name = os.path.basename(model_name)
+            file_stem = f"{eval_name}_{model_base_name}"
+                
+            report_filename = f"{args.output_dir}/{file_stem}{debug_suffix}.html"
             print(f"Writing report to {report_filename}")
             with open(report_filename, "w") as fh:
                 fh.write(common.make_report(result))
             metrics = result.metrics | {"score": result.score}
             print(metrics)
-            result_filename = f"/tmp/{file_stem}{debug_suffix}.json"
+            result_filename = f"{args.output_dir}/{file_stem}{debug_suffix}.json"
             with open(result_filename, "w") as f:
                 f.write(json.dumps(metrics, indent=2))
             print(f"Writing results to {result_filename}")
@@ -211,7 +244,6 @@ def main():
     print("\nAll results: ")
     print(merge_metrics_df.to_markdown())
     return merge_metrics
-
 
 if __name__ == "__main__":
     main()

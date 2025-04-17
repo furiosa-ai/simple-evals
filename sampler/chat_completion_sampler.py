@@ -25,10 +25,16 @@ class ChatCompletionSampler(SamplerBase):
         system_message: str | None = None,
         temperature: float = 0.5,
         max_tokens: int = 1024,
+        use_predefined_server: bool = False,
+        api_key: str = "token-abc123",
+        port: int = 8000, 
     ):
         self.api_key_name = "OPENAI_API_KEY"
-        self.client = OpenAI()
-        # using api_key=os.environ.get("OPENAI_API_KEY")  # please set your API_KEY
+        if use_predefined_server:
+            self.client = OpenAI(api_key=api_key, base_url=f"http://localhost:{port}/v1")
+        else:
+            self.client = OpenAI()
+            #using api_key=os.environ.get("OPENAI_API_KEY")  # please set your API_KEY
         self.model = model
         self.system_message = system_message
         self.temperature = temperature
