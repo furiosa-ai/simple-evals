@@ -63,8 +63,8 @@ class HumanEval(Eval):
         self.examples = list(self.examples.values())
 
         self._num_examples = num_examples
-        if self._num_examples:
-            self.examples = random.Random(self.seed).sample(self.examples, num_examples)
+        # if self._num_examples:
+        #     self.examples = random.Random(self.seed).sample(self.examples, num_examples)
         self._num_samples_per_task = num_samples_per_task
         self._ks_passes = ks_passes
         self._timeout = timeout

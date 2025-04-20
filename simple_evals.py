@@ -201,7 +201,8 @@ def main():
     evals = {args.task: get_evals(args.task, args.debug)}
     debug_suffix = "_DEBUG" if args.debug else ""
     print(debug_suffix)
-    os.environ["debug"] = "1" if args.debug else "0"
+    if args.debug:
+        os.environ["debug"] = "1"  
     mergekey2resultpath = {}
 
     if not os.path.exists(args.output_dir):
