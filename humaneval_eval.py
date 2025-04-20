@@ -47,7 +47,8 @@ def evaluate_functional_correctness(
             result = future.result()
             results.append(result)
     passed = [int(r["passed"]) for r in results]
-    return passed
+    fail_reason = [r['result'] for r in results]
+    return passed, fail_reason 
 
 
 class HumanEval(Eval):
@@ -88,7 +89,7 @@ class HumanEval(Eval):
             completions = [
                 find_code(sampler(prompt_messages)) for _ in range(self._num_samples_per_task)
             ]
-            results = evaluate_functional_correctness(sample, completions)
+            results, fail_reason = evaluate_functional_correctness(sample, completions)
             total = len(results)
             correct = sum(results)
             score = sum(results) / len(results)
@@ -98,6 +99,7 @@ class HumanEval(Eval):
                 score=score,
                 correct_answer=[1] * len(results),
                 extracted_answer=results,
+                fail_reason=fail_reason,
             )
             convo = prompt_messages + [
                 dict(content=completion, role="assistant") for completion in completions

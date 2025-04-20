@@ -145,6 +145,7 @@ HTML_JINJA = """
 <h3>Results</h3>
 <p>Correct Answer: {{ correct_answer }}</p>
 <p>Extracted Answer: {{ extracted_answer }}</p>
+<p>Reason: {{ fail_reason }}</p>
 <p>Score: {{ score }}</p>
 """
 
