@@ -53,9 +53,14 @@ class GPQAEval(Eval):
                     content=format_multichoice_question(choices_dict), role="user"
                 )
             ]
+            fail_reason = None
             response_text = sampler(prompt_messages)
-            match = re.search(ANSWER_PATTERN_MULTICHOICE, response_text)
-            extracted_answer = match.group(1) if match else None
+            if response_text is None:
+                fail_reason = "[finish when reasoning]"
+                extracted_answer = None
+            else:
+                match = re.search(ANSWER_PATTERN_MULTICHOICE, response_text)
+                extracted_answer = match.group(1) if match else None
             score = 1.0 if extracted_answer == correct_answer else 0.0
             html = common.jinja_env.from_string(HTML_JINJA).render(
                 prompt_messages=prompt_messages,
@@ -63,10 +68,13 @@ class GPQAEval(Eval):
                 score=score,
                 correct_answer=correct_answer,
                 extracted_answer=extracted_answer,
+                fail_reason=fail_reason,
             )
             convo = prompt_messages + [dict(content=response_text, role="assistant")]
+            metrics_ = {"chars": len(response_text) if response_text else 0,
+                        "stop_in_reasoning": 1 if fail_reason else 0,}
             return SingleEvalResult(
-                html=html, score=score, convo=convo, metrics={"chars": len(response_text)}
+                html=html, score=score, convo=convo, metrics=metrics_, 
             )
 
         results = common.map_with_progress(fn, self.examples)

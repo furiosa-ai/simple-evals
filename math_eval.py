@@ -47,9 +47,14 @@ class MathEval(Eval):
             prompt_messages = [
                 sampler._pack_message(content=QUERY_TEMPLATE.format(**row), role="user")
             ]
+            fail_reason=None
             response_text = sampler(prompt_messages)
-            match = re.search(ANSWER_PATTERN, response_text)
-            extracted_answer = match.group(1) if match else None
+            if response_text is None:
+                fail_reason = "[finish when reasoning]"
+                extracted_answer = None
+            else:
+                match = re.search(ANSWER_PATTERN, response_text)
+                extracted_answer = match.group(1) if match else None
             score = float(check_equality(self.equality_checker, row["Answer"], extracted_answer))
             html = common.jinja_env.from_string(HTML_JINJA).render(
                 prompt_messages=prompt_messages,
@@ -57,9 +62,11 @@ class MathEval(Eval):
                 score=score,
                 correct_answer=row["Answer"],
                 extracted_answer=extracted_answer,
+                fail_reason=fail_reason,
             )
+            metrics_ ={"stop_in_reasoning": 1 if fail_reason else 0}
             convo = prompt_messages + [dict(content=response_text, role="assistant")]
-            return SingleEvalResult(html=html, score=score, convo=convo)
+            return SingleEvalResult(html=html, score=score, convo=convo, metrics=metrics_)
 
         results = common.map_with_progress(fn, self.examples)
         return common.aggregate_results(results)

@@ -145,7 +145,9 @@ HTML_JINJA = """
 <h3>Results</h3>
 <p>Correct Answer: {{ correct_answer }}</p>
 <p>Extracted Answer: {{ extracted_answer }}</p>
-<p>Reason: {{ fail_reason }}</p>
+{% if fail_reason %}
+  <p>Reason: {{ fail_reason }}</p>
+{% endif %}
 <p>Score: {{ score }}</p>
 """
 
