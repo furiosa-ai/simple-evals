@@ -36,7 +36,7 @@ def main():
         help="Task to run math, gpqa, mgsm, drop, humaneval, simpleqa, mmlu"
     )
     parser.add_argument(
-        "--reasoning_max_gen_tokens", type=int, default=24576)
+        "--reasoning_max_gen_tokens", type=int, default=8192) #24576)
     parser.add_argument(
         "--output_dir", type=str, default="./results"
     )
@@ -49,6 +49,9 @@ def main():
     parser.add_argument(
         "--temperature", type=float, default=0,
     )
+    parser.add_argument(
+        "--max_tokens", type=int, default=2048,
+    )
     args = parser.parse_args()
     
     models = {
@@ -59,6 +62,7 @@ def main():
             api_key=args.api_key,
             port=args.port,
             temperature=args.temperature,
+            max_tokens=args.max_tokens,
             
         ),
         "meta-llama/Llama-3.1-70B-Instruct": ChatCompletionSampler(
@@ -66,7 +70,8 @@ def main():
             use_predefined_server=True,
             api_key=args.api_key,
             port=args.port,
-            temperature=args.temperature, 
+            temperature=args.temperature,
+            max_tokens=args.max_tokens,
         ),
         "deepseek-ai/DeepSeek-R1-Distill-Llama-8B": ChatCompletionSampler(
             model="deepseek-ai/DeepSeek-R1-Distill-Llama-8B",

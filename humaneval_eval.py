@@ -74,6 +74,8 @@ class HumanEval(Eval):
         instruction = "Read the following function signature and docstring, and fully implement the function described. Your response should only contain the code for this function.\n"
 
         def find_code(completion):
+            if completion is None: # resoning model, when it finishes generation because of length.
+                return "[finish when reasoning]"
             pattern = re.compile(r"```python\n(.*?)```", re.DOTALL)
             matches = pattern.findall(completion)
             extracted_answer = matches[0] if len(matches) >= 1 else completion
@@ -86,6 +88,7 @@ class HumanEval(Eval):
             prompt_messages = [
                 sampler._pack_message(role="user", content=instruction + sample["prompt"])
             ]
+            
             completions = [
                 find_code(sampler(prompt_messages)) for _ in range(self._num_samples_per_task)
             ]
@@ -104,16 +107,18 @@ class HumanEval(Eval):
             convo = prompt_messages + [
                 dict(content=completion, role="assistant") for completion in completions
             ]
-            return SingleEvalResult(
-                html=html,
-                score=score,
-                convo=convo,
-                metrics={
+            metrics_ = {
                     f"pass@{k}": estimate_pass_at_k([total], [correct], k)
                     # this will be aggrated so no need of .mean()
                     for k in self._ks_passes
                     if total >= k
-                },
+                }
+            metrics_["stop_in_reasoning"] = 1 if all("[finish when reasoning]" in c for c in completions) else 0
+            return SingleEvalResult(
+                html=html,
+                score=score,
+                convo=convo,
+                metrics=metrics_
             )
 
         results = common.map_with_progress(fn, self.examples, num_threads=3)
