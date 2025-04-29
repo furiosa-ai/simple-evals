@@ -73,6 +73,14 @@ def main():
             temperature=args.temperature,
             max_tokens=args.max_tokens,
         ),
+        "meta-llama/Llama-3.3-70B-Instruct": ChatCompletionSampler(
+            model="meta-llama/Llama-3.3-70B-Instruct",
+            use_predefined_server=True,
+            api_key=args.api_key,
+            port=args.port,
+            temperature=args.temperature,
+            max_tokens=args.max_tokens,
+        ),
         "deepseek-ai/DeepSeek-R1-Distill-Llama-8B": ChatCompletionSampler(
             model="deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
             use_predefined_server=True,
