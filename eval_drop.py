@@ -9,14 +9,15 @@ import json
 import random
 import re
 import string
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Set, Tuple, Union
+from tqdm import tqdm
+from multiprocessing.pool import ThreadPool
 
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-from . import common
-from .common import ANSWER_PATTERN, HTML_JINJA
-from .types import Eval, EvalResult, SamplerBase, SingleEvalResult
+from common import ANSWER_PATTERN, HTML_JINJA, map_with_progress, aggregate_results, url_to_fileobj, jinja_env
+from _types import Eval, EvalResult, SamplerBase, SingleEvalResult
 
 """
 From here through _normalize_answer was originally copied from:
@@ -59,7 +60,9 @@ def _normalize_answer(text: str) -> str:
     """Lower text and remove punctuation, articles and extra whitespace."""
 
     parts = [
-        _white_space_fix(_remove_articles(_normalize_number(_remove_punc(_lower(token)))))
+        _white_space_fix(
+            _remove_articles(_normalize_number(_remove_punc(_lower(token))))
+        )
         for token in _tokenize(text)
     ]
     parts = [part for part in parts if part.strip()]
@@ -82,9 +85,7 @@ def _normalize_number(text: str) -> str:
         return text
 
 
-def _answer_to_bags(
-    answer: Union[str, List[str], Tuple[str, ...]]
-) -> Tuple[List[str], List[Set[str]]]:
+def _answer_to_bags(answer: Union[str, List[str], Tuple[str, ...]]) -> Tuple[List[str], List[Set[str]]]:
     if isinstance(answer, (list, tuple)):
         raw_spans = answer
     else:
@@ -148,9 +149,7 @@ def _match_numbers_if_present(gold_bag: Set[str], predicted_bag: Set[str]) -> bo
     return False
 
 
-def get_drop_metrics(
-    predicted: Union[str, List[str], Tuple[str, ...]], gold: Union[str, List[str], Tuple[str, ...]]
-) -> Tuple[float, float]:
+def get_drop_metrics(predicted: Union[str, List[str], Tuple[str, ...]], gold: Union[str, List[str], Tuple[str, ...]]) -> Tuple[float, float]:
     """
     Takes a predicted answer and a gold answer (that are both either a string or a list of
     strings), and returns exact match and the DROP F1 metric for the prediction.  If you are
@@ -186,7 +185,9 @@ def answer_json_to_strings(answer: Dict[str, Any]) -> Tuple[Tuple[str, ...], str
             tuple(
                 [
                     "{0} {1} {2}".format(
-                        answer["date"]["day"], answer["date"]["month"], answer["date"]["year"]
+                        answer["date"]["day"],
+                        answer["date"]["month"],
+                        answer["date"]["year"],
                     ).strip()
                 ]
             ),
@@ -238,20 +239,14 @@ class DropEval(Eval):
         self.seed = 42
         self._num_examples = num_examples
         self._train_samples_per_prompt = train_samples_per_prompt
-        self.train_jsonl = (
-            "https://openaipublic.blob.core.windows.net/simple-evals/drop_v0_train.jsonl.gz"
-        )
-        self.test_jsonl = (
-            "https://openaipublic.blob.core.windows.net/simple-evals/drop_v0_dev.jsonl.gz"
-        )
-        with gzip.GzipFile(fileobj=common.url_to_fileobj(self.train_jsonl, binary=True), mode="rb") as f:
+        self.train_jsonl = "https://openaipublic.blob.core.windows.net/simple-evals/drop_v0_train.jsonl.gz"
+        self.test_jsonl = "https://openaipublic.blob.core.windows.net/simple-evals/drop_v0_dev.jsonl.gz"
+        with gzip.GzipFile(fileobj=url_to_fileobj(self.train_jsonl, binary=True), mode="rb") as f:
             self.train_samples = list(map(json.loads, f.readlines()))
-        with gzip.GzipFile(fileobj=common.url_to_fileobj(self.test_jsonl, binary=True), mode="rb") as f:
-            self.test_samples = list(map(json.loads, f.readlines()))
+        with gzip.GzipFile(fileobj=url_to_fileobj(self.test_jsonl, binary=True), mode="rb") as f:
+            self.examples = list(map(json.loads, f.readlines()))
             if self._num_examples:
-                self.test_samples = random.Random(self.seed).sample(
-                    self.test_samples, self._num_examples
-                )
+                self.examples = self.examples[:self._num_examples]
 
     def __call__(self, sampler: SamplerBase) -> EvalResult:
         rng = random.Random(self.seed)
@@ -289,23 +284,40 @@ Think step by step, then write a line of the form "Answer: $ANSWER" at the end o
                         for correct_answer in correct_answers
                     ]
                     extracted_answers = [
-                        extracted_answer for i in range(len(correct_answers)) if matches[i]
+                        extracted_answer
+                        for i in range(len(correct_answers))
+                        if matches[i]
                     ]
                     score = True in matches
-                    html = common.jinja_env.from_string(HTML_JINJA).render(
-                        prompt_messages=prompt_messages,
-                        next_message=dict(content=extracted_answer, role="assistant"),
-                        score=score,
-                        correct_answer=correct_answers,
-                        extracted_answer=extracted_answers,
-                    )
-                    convo = prompt_messages + [dict(content=extracted_answer, role="assistant")]
-                    return SingleEvalResult(
-                        html=html,
-                        score=score,
-                        convo=convo,
-                        metrics={"em_score": em_score, "f1_score": f1_score},
-                    )
+                    return {
+                        "prompt_messages": prompt_messages,
+                        "response_text": extracted_answer,
+                        "correct_answer": correct_answers,
+                        "extracted_answer": extracted_answers,
+                        "em_score": em_score,
+                        "f1_score": f1_score,
+                        "score": score,
+                    }
+                    
+        with ThreadPool(min(50, len(self.examples))) as pool:
+            results = list(tqdm(pool.imap(fn, self.examples), total=len(self.examples), desc="Evaluating DROP"))
+        return results
+    
+                    # html = jinja_env.from_string(HTML_JINJA).render(
+                    #     prompt_messages=prompt_messages,
+                    #     next_message=dict(content=extracted_answer, role="assistant"),
+                    #     score=score,
+                    #     correct_answer=correct_answers,
+                    #     extracted_answer=extracted_answers,
+                    #     fail_reason="",
+                    # )
+                    # convo = prompt_messages + [dict(content=extracted_answer, role="assistant")]
+                    # return SingleEvalResult(
+                    #     html=html,
+                    #     score=score,
+                    #     convo=convo,
+                    #     metrics={"em_score": em_score, "f1_score": f1_score},
+                    # )
 
-        results = common.map_with_progress(fn, self.test_samples)
-        return common.aggregate_results(results)
+        # results = map_with_progress(fn, self.examples)
+        # return aggregate_results(results)

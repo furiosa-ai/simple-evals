@@ -1,15 +1,9 @@
 import json
 
-import pandas as pd
-
-from . import common
-from .mmlu_eval import MMLUEval
-from .sampler.chat_completion_sampler import (
-    OPENAI_SYSTEM_MESSAGE_API,
-    OPENAI_SYSTEM_MESSAGE_CHATGPT,
-    ChatCompletionSampler,
-)
-from .sampler.o_chat_completion_sampler import OChatCompletionSampler
+from common import make_report
+from mmlu_eval import MMLUEval
+from sampler.chat_completion_sampler import OPENAI_SYSTEM_MESSAGE_API, OPENAI_SYSTEM_MESSAGE_CHATGPT, ChatCompletionSampler
+from sampler.o_chat_completion_sampler import OChatCompletionSampler
 
 
 def main():
@@ -100,7 +94,7 @@ def main():
             "mmlu_YO-NG",
         ]
     }
-    print(evals)
+    
     debug_suffix = "_DEBUG" if debug else ""
     mergekey2resultpath = {}
     for sampler_name, sampler in samplers.items():
@@ -109,22 +103,19 @@ def main():
             # ^^^ how to use a sampler
             file_stem = f"{eval_name}_{sampler_name}"
             report_filename = f"/tmp/{file_stem}{debug_suffix}.html"
-            print(f"Writing report to {report_filename}")
             with open(report_filename, "w") as fh:
-                fh.write(common.make_report(result))
+                fh.write(make_report(result))
             metrics = result.metrics | {"score": result.score}
-            print(metrics)
             result_filename = f"/tmp/{file_stem}{debug_suffix}.json"
             with open(result_filename, "w") as f:
                 f.write(json.dumps(metrics, indent=2))
-            print(f"Writing results to {result_filename}")
             mergekey2resultpath[f"{file_stem}"] = result_filename
     merge_metrics = []
     for eval_sampler_name, result_filename in mergekey2resultpath.items():
         try:
             result = json.load(open(result_filename, "r+"))
         except Exception as e:
-            print(e, result_filename)
+            print(f"Error loading result: {e}, {result_filename}")
             continue
         result = result.get("f1_score", result.get("score", None))
         eval_name = eval_sampler_name[: eval_sampler_name.find("_")]
@@ -132,11 +123,6 @@ def main():
         merge_metrics.append(
             {"eval_name": eval_name, "sampler_name": sampler_name, "metric": result}
         )
-    merge_metrics_df = pd.DataFrame(merge_metrics).pivot(
-        index=["sampler_name"], columns="eval_name"
-    )
-    print("\nAll results: ")
-    print(merge_metrics_df.to_markdown())
     return merge_metrics
 
 

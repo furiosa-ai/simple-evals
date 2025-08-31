@@ -1,8 +1,7 @@
 import time
+from anthropic import Anthropic, RateLimitError
 
-import anthropic
-
-from ..types import MessageList, SamplerBase
+from _types import MessageList, SamplerBase
 
 CLAUDE_SYSTEM_MESSAGE_LMSYS = (
     "The assistant is Claude, created by Anthropic. The current date is "
@@ -17,7 +16,7 @@ CLAUDE_SYSTEM_MESSAGE_LMSYS = (
     "tasks. It uses markdown for coding. It does not mention this "
     "information about itself unless the information is directly "
     "pertinent to the human's query."
-).format(currentDateTime="2024-04-01")
+).format(currentDateTime=time.strftime("%Y-%m-%d"))
 # reference: https://github.com/lm-sys/FastChat/blob/7899355ebe32117fdae83985cf8ee476d2f4243f/fastchat/conversation.py#L894
 
 
@@ -26,25 +25,18 @@ class ClaudeCompletionSampler(SamplerBase):
     Sample from Claude API
     """
 
-    def __init__(
-        self,
-        model: str = "claude-3-opus-20240229",
-        system_message: str | None = None,
-        temperature: float = 0.0,  # default in Anthropic example
-        max_tokens: int = 1024,
-    ):
+    def __init__(self, model: str, system_message: str | None = None, temperature: float = 0.0, max_tokens: int = 8192):
+        if system_message is None:
+            system_message = CLAUDE_SYSTEM_MESSAGE_LMSYS
         self.api_key_name = "ANTHROPIC_API_KEY"
-        self.client = anthropic.Anthropic()
-        # using api_key=os.environ.get("ANTHROPIC_API_KEY") # please set your API_KEY
+        self.client = Anthropic()
         self.model = model
         self.system_message = system_message
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.image_format = "base64"
 
-    def _handle_image(
-        self, image: str, encoding: str = "base64", format: str = "png", fovea: int = 768
-    ):
+    def _handle_image(self, image: str, encoding: str = "base64", format: str = "png"):
         new_image = {
             "type": "image",
             "source": {
@@ -73,12 +65,10 @@ class ClaudeCompletionSampler(SamplerBase):
                     messages=message_list,
                 )
                 return message.content[0].text
-            except anthropic.RateLimitError as e:
+            except RateLimitError as e:
                 exception_backoff = 2**trial  # expontial back off
-                print(
-                    f"Rate limit exception so wait and retry {trial} after {exception_backoff} sec",
-                    e,
-                )
+                print(f"Rate limit exception so wait and retry {trial} after {exception_backoff} sec", e)
                 time.sleep(exception_backoff)
                 trial += 1
-            # unknown error shall throw exception
+            except Exception as e:
+                raise Exception(f"Error: {e}")
