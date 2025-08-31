@@ -1,16 +1,17 @@
 """
-MGSM: Multilingual Grade School Math Benchmark (MGSM) is a benchmark of grade-school math problems. 
+MGSM: Multilingual Grade School Math Benchmark (MGSM) is a benchmark of grade-school math problems.
 Language Models are Multilingual Chain-of-Thought Reasoners
 Freda Shi, Mirac Suzgun, Markus Freitag, Xuezhi Wang, Suraj Srivats, Soroush Vosoughi, Hyung Won Chung, Yi Tay, Sebastian Ruder, Denny Zhou, Dipanjan Das, Jason Wei
-https://arxiv.org/abs/2210.03057 reference: https://github.com/google-research/url-nlp 
+https://arxiv.org/abs/2210.03057 reference: https://github.com/google-research/url-nlp
 """
 
 import re
 from typing import Optional
 
-from . import common
-from .mmlu_eval import HTML_JINJA
-from .types import Eval, EvalResult, SamplerBase, SingleEvalResult
+from common import url_to_fileobj, map_with_progress, aggregate_results, jinja_env, HTML_JINJA
+from _types import Eval, EvalResult, SamplerBase, SingleEvalResult
+from tqdm import tqdm
+from multiprocessing.pool import ThreadPool
 
 ALL_LANGUAGES = ["bn", "de", "en", "es", "fr", "ja", "ru", "sw", "te", "th", "zh"]
 LATIN_LANGUAGES = ["de", "en", "es", "fr", "sw"]
@@ -32,39 +33,38 @@ LANG_TO_FPATH = {
 LANG_TO_INSTRUCTIONS = {
     "en": """Solve this math problem. Give the reasoning steps before giving the final answer on the last line by itself in the format of "Answer:". Do not add anything other than the integer answer after "Answer:".
 
-{input}""",
+    {input}""",
     "bn": """এই গণিতের সমস্যাটি সমাধান করুন। চূড়ান্ত উত্তর দেওয়ার আগে যুক্তিসম্পন্ন পদক্ষেপ প্রদান করুন। চূড়ান্ত উত্তরটি একক সংখ্যা হিসাবে "উত্তর:" এর পরে শেষ লাইনে দিন। "উত্তর:" এর পরে অন্য কিছু যুক্ত করবেন না।.
 
-{input}""",
+    {input}""",
     "de": """Löse dieses Mathematikproblem. Gib die Schritte zur Begründung an, bevor du die endgültige Antwort in der letzten Zeile alleine im Format "Antwort:" gibst. Füge nichts anderes als die ganzzahlige Antwort nach "Antwort:" hinzu.
 
-{input}""",
+    {input}""",
     "es": """Resuelve este problema matemático. Proporciona los pasos de razonamiento antes de dar la respuesta final en la última línea por sí misma en el formato de "Respuesta:". No añadas nada más que la respuesta entera después de "Respuesta:".
 
-{input}""",
+    {input}""",
     "fr": """Résolvez ce problème de mathématiques. Donnez les étapes de raisonnement avant de fournir la réponse finale sur la dernière ligne elle-même dans le format de "Réponse:". N'ajoutez rien d'autre que la réponse entière après "Réponse:".
 
-{input}""",
+    {input}""",
     "ja": """の数学の問題を解いてください。最終的な答えを出す前に、解答の推論過程を記述してください。そして最後の行には "答え:" の形式で答えを記述し、その後には整数の答え以外何も追加しないでください。
 
-{input}""",
+    {input}""",
     "ru": """Решите эту математическую задачу. Объясните шаги рассуждения перед тем, как дать окончательный ответ в последней строке сам по себе в формате "Ответ:". Не добавляйте ничего, кроме целочисленного ответа после "Ответ:".
 
-{input}""",
+    {input}""",
     "sw": """Suluhisha tatizo hili la hesabu. Toa hatua za mantiki kabla ya kutoa jibu la mwisho kwenye mstari wa mwisho peke yake katika muundo wa "Jibu:". Usiongeze chochote kingine isipokuwa jibu la integer baada ya "Jibu:".
 
-{input}""",
+    {input}""",
     "te": """ఈ గణిత సమస్యను పరిష్కరించండి. చివరి సమాధానాన్ని ఇవ్వదానికి ముందు తర్కాత్మక అదుగులను ఇవ్వండి. చివరి పంక్తిలో మాత్రమే 'సమాధానం:' అనే ఆకారంలో చివరి సమాధానాద్ని ఇవ్వండి సమాధానం: తర్వాత పూర్ణాంక సమాధానానికి తప్పించి ఎదేనా చేర్చవద్దు.
 
-{input}""",
+    {input}""",
     "th": """แก้ปัญหาคณิตศาสตร์นี้ ให้ให้ขั้นตอนการใช้เหตุผลก่อนที่จะให้คำตอบสุดท้ายในบรรทัดสุดท้ายโดยอยู่ในรูปแบบ "คำตอบ:" ไม่ควรเพิ่มอะไรนอกจากคำตอบที่เป็นจำนวนเต็มหลังจาก "คำตอบ:"
 
-{input}""",
+    {input}""",
     "zh": """解决这个数学问题。在最后一行给出答案前，请提供推理步骤。最后一行应该以 "答案: " 的形式独立给出答案。在 "答案：" 后不要添加除整数答案之外的任何内容。
 
-{input}""",
+    {input}""",
 }
-
 LANG_TO_ANSWER_PREFIX = {
     "en": "Answer",
     "bn": "উত্তর",
@@ -107,7 +107,7 @@ def score_mgsm(target: str, prediction: str) -> bool:
 def get_lang_examples(lang: str) -> list[dict[str, str]]:
     fpath = LANG_TO_FPATH[lang]
     examples = []
-    with common.url_to_fileobj(fpath, binary=True) as f:
+    with url_to_fileobj(fpath, binary=True) as f:
         for raw_line in f:
             line = raw_line.decode("utf-8").strip()
             inputs, targets = line.split("\t")
@@ -128,63 +128,67 @@ def get_all_examples() -> list[dict[str, str]]:
 
 
 class MGSMEval(Eval):
-    def __init__(
-        self,
-        num_examples_per_lang: int = 250,  # restrict to a subset of the data for debugging
-        languages: Optional[list[str]] = ALL_LANGUAGES,
-    ):
+    def __init__(self, num_examples_per_lang: int, languages: Optional[list[str]] = ALL_LANGUAGES):
         if languages is None:
             languages = ALL_LANGUAGES
         else:
             for language in languages:
                 if language not in ALL_LANGUAGES:
                     raise ValueError(
-                        f"language {language} is not a valid language. "
+                        f"language {language} is not a valid language."
                         f"It should be one in {ALL_LANGUAGES}"
                     )
-        self._languages = languages
-        self._num_examples_per_lang = num_examples_per_lang
+        self.languages = languages
+        self.num_examples = num_examples_per_lang
 
         examples = []
-        for lang in self._languages:
+        for lang in self.languages:
             lang_examples = get_lang_examples(lang)
-            examples.extend(lang_examples[: self._num_examples_per_lang])
+            examples.extend(lang_examples[: self.num_examples])
         self.examples = examples
 
     def __call__(self, sampler: SamplerBase) -> EvalResult:
         def fn(example: dict[str, str]):
             language = example["lang"]
-            latin_language = "group_latin" if language in LATIN_LANGUAGES else "group_non_latin"
+            latin_language = ("group_latin" if language in LATIN_LANGUAGES else "group_non_latin")
             correct_answer = example["targets"]
             instruction = LANG_TO_INSTRUCTIONS[language]
-            prompt_messages = [
-                sampler._pack_message(
-                    content=instruction.format(input=example["inputs"]), role="user"
-                )
-            ]
+            prompt_messages = [sampler._pack_message(content=instruction.format(input=example["inputs"]), role="user")]
             try:
                 response_text = sampler(prompt_messages)
             except Exception as e:
-                response_text = ""
-
+                raise Exception(f"Error sampling response: {e}")
             answer_prefix = LANG_TO_ANSWER_PREFIX[language]
             extracted_answer = parse_answer(response_text, answer_prefix)
-
             score = score_mgsm(correct_answer, extracted_answer)
-            html = common.jinja_env.from_string(HTML_JINJA).render(
-                prompt_messages=prompt_messages,
-                next_message=dict(content=response_text, role="assistant"),
-                score=score,
-                correct_answer=correct_answer,
-                extracted_answer=extracted_answer or None,
-            )
-            convo = prompt_messages + [dict(content=response_text, role="assistant")]
-            return SingleEvalResult(
-                html=html,
-                score=score,
-                convo=convo,
-                metrics={language: score, latin_language: score},
-            )
+            return {
+                "prompt_messages": prompt_messages,
+                "response_text": response_text,
+                "extracted_answer": extracted_answer,
+                "correct_answer": correct_answer,
+                "score": score,
+            }
+            
+        with ThreadPool(min(50, len(self.examples))) as pool:
+            results = list(tqdm(pool.imap(fn, self.examples), total=len(self.examples), desc="Evaluating MGSM"))
 
-        results = common.map_with_progress(fn, self.examples)
-        return common.aggregate_results(results, default_stats=("mean", "std"))
+        return results
+
+            # html = jinja_env.from_string(HTML_JINJA).render(
+            #     prompt_messages=prompt_messages,
+            #     next_message=dict(content=response_text, role="assistant"),
+            #     score=score,
+            #     correct_answer=correct_answer,
+            #     extracted_answer=extracted_answer or None,
+            #     fail_reason="",
+            # )
+            # convo = prompt_messages + [dict(content=response_text, role="assistant")]
+            # return SingleEvalResult(
+            #     score=score,
+            #     metrics={language: score, latin_language: score},
+            #     html=html,
+            #     convo=convo,
+            # )
+
+        # results = map_with_progress(fn, self.examples)
+        # return aggregate_results(results)

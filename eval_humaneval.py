@@ -1,0 +1,122 @@
+"""
+HumanEval: Evaluating Large Language Models Trained on Code
+Mark Chen and Jerry Tworek and Heewoo Jun and Qiming Yuan and Henrique Ponde de Oliveira Pinto and Jared Kaplan and Harri Edwards and Yuri Burda and Nicholas Joseph and Greg Brockman and Alex Ray and Raul Puri and Gretchen Krueger and Michael Petrov and Heidy Khlaaf and Girish Sastry and Pamela Mishkin and Brooke Chan and Scott Gray and Nick Ryder and Mikhail Pavlov and Alethea Power and Lukasz Kaiser and Mohammad Bavarian and Clemens Winter and Philippe Tillet and Felipe Petroski Such and Dave Cummings and Matthias Plappert and Fotios Chantzis and Elizabeth Barnes and Ariel Herbert-Voss and William Hebgen Guss and Alex Nichol and Alex Paino and Nikolas Tezak and Jie Tang and Igor Babuschkin and Suchir Balaji and Shantanu Jain and William Saunders and Christopher Hesse and Andrew N. Carr and Jan Leike and Josh Achiam and Vedant Misra and Evan Morikawa and Alec Radford and Matthew Knight and Miles Brundage and Mira Murati and Katie Mayer and Peter Welinder and Bob McGrew and Dario Amodei and Sam McCandlish and Ilya Sutskever and Wojciech Zaremba
+https://arxiv.org/abs/2107.03374 https://github.com/openai/human-eval/
+"""
+import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm import tqdm
+from multiprocessing.pool import ThreadPool
+
+from human_eval.data import read_problems
+from human_eval.evaluation import estimate_pass_at_k
+from human_eval.execution import check_correctness
+
+from common import HTML_JINJA, map_with_progress, aggregate_results, jinja_env
+from _types import Eval, EvalResult, SamplerBase, SingleEvalResult
+
+
+def evaluate_functional_correctness(
+    sample: dict[str, str],
+    completions: list[str],
+    n_workers: int = 4,
+    timeout: float = 3.0,
+):
+    """
+    Evaluates the functional correctness of generated samples, and writes
+    results to f"{sample_file}_results.jsonl.gz"
+    """
+
+    # Check the generated samples against test suites.
+    with ThreadPoolExecutor(max_workers=n_workers) as executor:
+        futures = []
+        for i, completion in enumerate(completions):
+            args = (sample, completion, timeout, i)
+            future = executor.submit(check_correctness, *args)
+            futures.append(future)
+        results = []
+        for future in as_completed(futures):
+            result = future.result()
+            results.append(result)
+    passed = [int(r["passed"]) for r in results]
+    fail_reason = [r["result"] for r in results]
+    return passed, fail_reason
+
+
+class HumanEval(Eval):
+    def __init__(self, num_examples: int = 250, num_samples_per_task: int = 5, ks_passes: list[int] = [1, 2, 5], timeout: int = 120):
+        self.seed = 0
+        self.examples = read_problems()
+        self.examples = list(self.examples.values())
+        self._num_samples_per_task = num_samples_per_task
+        self._ks_passes = ks_passes
+        self._timeout = timeout
+        if num_examples:
+            self.examples = self.examples[:num_examples]
+
+    def __call__(self, sampler: SamplerBase) -> EvalResult:
+        instruction = "Read the following function signature and docstring, and fully implement the function described. Your response should only contain the code for this function.\n"
+
+        def find_code(completion):
+            if (completion is None):  # resoning model, when it finishes generation because of length.
+                return "[finish when reasoning]"
+            pattern = re.compile(r"```python\n(.*?)```", re.DOTALL)
+            matches = pattern.findall(completion)
+            extracted_answer = matches[0] if len(matches) >= 1 else completion
+            extracted_answer = extracted_answer[
+                extracted_answer.find(":\n    ") + 2 :
+            ]
+            return extracted_answer
+
+        def fn(sample: dict[str, str]):
+            prompt_messages = [sampler._pack_message(role="user", content=instruction + sample["prompt"])]
+            completions = [
+                find_code(sampler(prompt_messages))
+                for _ in range(self._num_samples_per_task)
+            ]
+            results, fail_reason = evaluate_functional_correctness(sample, completions)
+            total = len(results)
+            correct = sum(results)
+            score = sum(results) / len(results)
+            
+            return {
+                "prompt_messages": prompt_messages,
+                "response_text": completions[0],
+                "extracted_answer": results,
+                "correct_answer": [1] * len(results),
+                "total": total,
+                "correct": correct,
+                "score": score,
+                "fail_reason": fail_reason,
+            }
+            
+        with ThreadPool(min(50, len(self.examples))) as pool:
+            results = list(tqdm(pool.imap(fn, self.examples), total=len(self.examples), desc="Evaluating HumanEval"))
+
+        return results
+            
+        #     html = jinja_env.from_string(HTML_JINJA).render(
+        #         prompt_messages=prompt_messages,
+        #         next_message=dict(content=completions[0], role="assistant"),
+        #         score=score,
+        #         correct_answer=[1] * len(results),
+        #         extracted_answer=results,
+        #         fail_reason=fail_reason,
+        #     )
+        #     convo = prompt_messages + [dict(content=completion, role="assistant") for completion in completions]
+        #     metrics_ = {
+        #         f"pass@{k}": estimate_pass_at_k([total], [correct], k)
+        #         # this will be aggrated so no need of .mean()
+        #         for k in self._ks_passes
+        #         if total >= k
+        #     }
+        #     metrics_["stop_in_reasoning"] = 1 if all("[finish when reasoning]" in c for c in completions) else 0
+        #     return SingleEvalResult(
+        #         html=html,
+        #         score=score,
+        #         convo=convo,
+        #         metrics=metrics_,
+        #     )
+
+        # results = map_with_progress(fn, self.examples, num_threads=3)
+        # return aggregate_results(results)
