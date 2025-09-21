@@ -2,7 +2,7 @@ import argparse
 import json
 import subprocess
 from datetime import datetime
-
+from pathlib import Path
 import pandas as pd
 
 from . import common
@@ -36,7 +36,8 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        help="Select a model by name. Also accepts a comma-separated list of models.",
+        help="Select a model by name. Also accepts a comma-separated list of models. \
+            if enable with --custom, uses a serving API with model_id from --model.",
     )
     parser.add_argument(
         "--eval",
@@ -59,7 +60,23 @@ def main():
     parser.add_argument(
         "--examples", type=int, help="Number of examples to use (overrides default)"
     )
-
+    parser.add_argument(
+        "--base_url",
+        type=str,
+        default="http://localhost:8000/v1", 
+        help="Base URL for the custom serving API"
+    )
+    parser.add_argument(
+        "--custom",
+        action="store_true",
+        help="Use custom local model for 'custom' model option",
+    )
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default="results",
+        help="Base output path for results",
+    )
     args = parser.parse_args()
 
     models = {
@@ -233,6 +250,13 @@ def main():
         "claude-3-haiku-20240307": ClaudeCompletionSampler(
             model="claude-3-haiku-20240307",
         ),
+        # custom local models
+        f"{args.model}": ChatCompletionSampler(
+            model=args.model,
+            system_message=OPENAI_SYSTEM_MESSAGE_API,
+            max_tokens=2048,
+            base_url=args.base_url,
+        ),
     }
 
     if args.list_models:
@@ -244,7 +268,7 @@ def main():
     if args.model:
         models_chosen = args.model.split(",")
         for model_name in models_chosen:
-            if model_name not in models:
+            if model_name not in models and not args.custom:
                 print(f"Error: Model '{model_name}' not found.")
                 return
         models = {model_name: models[model_name] for model_name in models_chosen}
@@ -368,16 +392,19 @@ def main():
     print(f"Running the following evals: {list(evals.keys())}")
     print(f"Running evals for the following models: {list(models.keys())}")
 
+    result_path = Path(__file__).parent / args.output_dir
+
     now = datetime.now()
     date_str = now.strftime("%Y%m%d_%H%M%S")
     for model_name, sampler in models.items():
         for eval_name, eval_obj in evals.items():
             result = eval_obj(sampler)
             # ^^^ how to use a sampler
-            file_stem = f"{eval_name}_{model_name}"
+            model_name_suffix = model_name.split("/")[-1]
+            file_stem = f"{eval_name}_{model_name_suffix}"
             # file stem should also include the year, month, day, and time in hours and minutes
             file_stem += f"_{date_str}"
-            report_filename = f"/tmp/{file_stem}{debug_suffix}.html"
+            report_filename = result_path / f"{file_stem}{debug_suffix}.html"
             print(f"Writing report to {report_filename}")
             with open(report_filename, "w") as fh:
                 fh.write(common.make_report(result))
@@ -386,12 +413,12 @@ def main():
             # Sort metrics by key
             metrics = dict(sorted(metrics.items()))
             print(metrics)
-            result_filename = f"/tmp/{file_stem}{debug_suffix}.json"
+            result_filename = result_path / f"{file_stem}{debug_suffix}.json"
             with open(result_filename, "w") as f:
                 f.write(json.dumps(metrics, indent=2))
             print(f"Writing results to {result_filename}")
 
-            full_result_filename = f"/tmp/{file_stem}{debug_suffix}_allresults.json"
+            full_result_filename = result_path / f"{file_stem}{debug_suffix}_allresults.json"
             with open(full_result_filename, "w") as f:
                 result_dict = {
                     "score": result.score,
