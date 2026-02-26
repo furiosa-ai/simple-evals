@@ -27,9 +27,10 @@ class ChatCompletionSampler(SamplerBase):
         top_p: float = 1.0,
         base_url: str | None = None,
         extra_body: dict | None = None,
+        timeout: float = 1200.0, #Default seems to be 60
     ):
         self.api_key_name = "OPENAI_API_KEY"
-        self.client = OpenAI(base_url=base_url) if base_url else OpenAI()
+        self.client = OpenAI(base_url=base_url, timeout=timeout) if base_url else OpenAI(timeout=timeout)
         # using api_key=os.environ.get("OPENAI_API_KEY")  # please set your API_KEY
         self.model = model
         self.system_message = system_message
