@@ -251,11 +251,14 @@ def main():
             model="claude-3-haiku-20240307",
         ),
         # custom local models
+        #TODO: Gen kwargs should be able to be passed in from the command line 
         f"{args.model}": ChatCompletionSampler(
             model=args.model,
             system_message=OPENAI_SYSTEM_MESSAGE_API,
-            max_tokens=2048,
+            max_tokens=2048, 
             base_url=args.base_url,
+            temperature=1.0,
+            top_p=0.95,
         ),
     }
 

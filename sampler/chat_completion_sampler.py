@@ -24,6 +24,7 @@ class ChatCompletionSampler(SamplerBase):
         system_message: str | None = None,
         temperature: float = 0.5,
         max_tokens: int = 1024,
+        top_p: float = 1.0,
         base_url: str | None = None,
     ):
         self.api_key_name = "OPENAI_API_KEY"
@@ -33,6 +34,7 @@ class ChatCompletionSampler(SamplerBase):
         self.system_message = system_message
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.top_p = top_p
         self.image_format = "url"
 
     def _handle_image(
@@ -69,6 +71,8 @@ class ChatCompletionSampler(SamplerBase):
                     messages=message_list,
                     temperature=self.temperature,
                     max_tokens=self.max_tokens,
+                    top_p =self.top_p,
+                    enable_thinking=False,
                 )
                 content = response.choices[0].message.content
                 if content is None:
