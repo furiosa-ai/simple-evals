@@ -26,6 +26,7 @@ class ChatCompletionSampler(SamplerBase):
         max_tokens: int = 1024,
         top_p: float = 1.0,
         base_url: str | None = None,
+        extra_body: dict | None = None,
     ):
         self.api_key_name = "OPENAI_API_KEY"
         self.client = OpenAI(base_url=base_url) if base_url else OpenAI()
@@ -35,6 +36,7 @@ class ChatCompletionSampler(SamplerBase):
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.top_p = top_p
+        self.extra_body = extra_body or {}
         self.image_format = "url"
 
     def _handle_image(
@@ -71,8 +73,8 @@ class ChatCompletionSampler(SamplerBase):
                     messages=message_list,
                     temperature=self.temperature,
                     max_tokens=self.max_tokens,
-                    top_p =self.top_p,
-                    enable_thinking=False,
+                    top_p=self.top_p,
+                    extra_body=self.extra_body,
                 )
                 content = response.choices[0].message.content
                 if content is None:

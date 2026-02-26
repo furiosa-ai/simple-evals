@@ -1,6 +1,7 @@
 import argparse
 import json
 import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 import pandas as pd
@@ -77,7 +78,45 @@ def main():
         default="results",
         help="Base output path for results",
     )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=0.5,
+        help="Temperature for sampling (default: 0.5)",
+    )
+    parser.add_argument(
+        "--max_tokens",
+        type=int,
+        default=2048,
+        help="Maximum tokens for generation (default: 2048)",
+    )
+    parser.add_argument(
+        "--top_p",
+        type=float,
+        default=1.0,
+        help="Top-p for nucleus sampling (default: 1.0)",
+    )
+    parser.add_argument(
+        "--extra_body",
+        type=str,
+        default="{}",
+        help="Extra body parameters as JSON string (e.g., '{\"chat_template_kwargs\": {\"enable_thinking\": false}}')",
+    )
     args = parser.parse_args()
+
+    # Validate that generation arguments are only used with --custom
+    gen_args_provided = any([
+        '--temperature' in sys.argv,
+        '--max_tokens' in sys.argv,
+        '--top_p' in sys.argv,
+        '--extra_body' in sys.argv,
+    ])
+    
+    if not args.custom and gen_args_provided:
+        parser.error(
+            "Generation arguments (--temperature, --max_tokens, --top_p, --extra_body) "
+            "can only be used with --custom flag"
+        )
 
     models = {
         # Reasoning Models
@@ -251,14 +290,14 @@ def main():
             model="claude-3-haiku-20240307",
         ),
         # custom local models
-        #TODO: Gen kwargs should be able to be passed in from the command line 
         f"{args.model}": ChatCompletionSampler(
             model=args.model,
             system_message=OPENAI_SYSTEM_MESSAGE_API,
-            max_tokens=2048, 
+            max_tokens=args.max_tokens, 
             base_url=args.base_url,
-            temperature=1.0,
-            top_p=0.95,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            extra_body=json.loads(args.extra_body),
         ),
     }
 
