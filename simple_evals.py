@@ -343,6 +343,7 @@ def main():
                 return GPQAEval(
                     n_repeats=1 if debug_mode else args.n_repeats or 10,
                     num_examples=num_examples,
+                    n_threads=args.n_threads,
                 )
             case "mgsm":
                 return MGSMEval(
