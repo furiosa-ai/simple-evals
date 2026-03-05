@@ -20,6 +20,7 @@ class GPQAEval(Eval):
         n_repeats: int = 4,
         variant: str = "diamond",
         num_examples: int | None = None,  # restrict to a subset of the data for debugging
+        n_threads: int | None = None,  # number of threads for parallel processing
     ):
         df = pandas.read_csv(
             f"https://openaipublic.blob.core.windows.net/simple-evals/gpqa_{variant}.csv"
@@ -33,6 +34,7 @@ class GPQAEval(Eval):
         examples = [example | {"permutation": rng.sample(range(4), 4)} for example in examples]
         self.examples = examples
         self.n_repeats = n_repeats
+        self.n_threads = n_threads
 
     def __call__(self, sampler: SamplerBase) -> EvalResult:
         def fn(row: dict):
@@ -71,5 +73,5 @@ class GPQAEval(Eval):
                 html=html, score=score, convo=convo, metrics={"chars": len(response_text)}
             )
 
-        results = common.map_with_progress(fn, self.examples)
+        results = common.map_with_progress(fn, self.examples, num_threads=self.n_threads)
         return common.aggregate_results(results)

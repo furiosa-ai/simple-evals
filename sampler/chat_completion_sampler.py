@@ -23,16 +23,21 @@ class ChatCompletionSampler(SamplerBase):
         model: str = "gpt-3.5-turbo",
         system_message: str | None = None,
         temperature: float = 0.5,
-        max_tokens: int = 1024,
+        max_tokens: int | None = 1024,
+        top_p: float = 1.0,
         base_url: str | None = None,
+        extra_body: dict | None = None,
+        timeout: float = None, #Default seems to be 60
     ):
         self.api_key_name = "OPENAI_API_KEY"
-        self.client = OpenAI(base_url=base_url) if base_url else OpenAI()
+        self.client = OpenAI(base_url=base_url, timeout=timeout) if base_url else OpenAI(timeout=timeout)
         # using api_key=os.environ.get("OPENAI_API_KEY")  # please set your API_KEY
         self.model = model
         self.system_message = system_message
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.top_p = top_p
+        self.extra_body = extra_body or {}
         self.image_format = "url"
 
     def _handle_image(
@@ -69,6 +74,8 @@ class ChatCompletionSampler(SamplerBase):
                     messages=message_list,
                     temperature=self.temperature,
                     max_tokens=self.max_tokens,
+                    top_p=self.top_p,
+                    extra_body=self.extra_body,
                 )
                 content = response.choices[0].message.content
                 if content is None:
