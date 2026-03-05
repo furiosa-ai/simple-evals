@@ -29,7 +29,7 @@ class MathEval(Eval):
         equality_checker: SamplerBase,
         num_examples: int | None = None,
         n_repeats: int = 16,
-        split: Literal["math_test", "math_500_test"] = "math_test",
+        split: Literal["math_test", "math_500_test"] = "math_500_test",
     ):
         df = pandas.read_csv(
             f"https://openaipublic.blob.core.windows.net/simple-evals/{split}.csv"
