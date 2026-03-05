@@ -23,7 +23,7 @@ class ChatCompletionSampler(SamplerBase):
         model: str = "gpt-3.5-turbo",
         system_message: str | None = None,
         temperature: float = 0.5,
-        max_tokens: int = 1024,
+        max_tokens: int | None = 1024,
         top_p: float = 1.0,
         base_url: str | None = None,
         extra_body: dict | None = None,

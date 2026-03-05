@@ -86,9 +86,9 @@ def main():
     )
     parser.add_argument(
         "--max_tokens",
-        type=int,
+        type=lambda x: None if x.lower() == 'none' else int(x),
         default=2048,
-        help="Maximum tokens for generation (default: 2048)",
+        help="Maximum tokens for generation (default: 2048, use 'None' for maximum generation (only bounded by model-max-length.))",
     )
     parser.add_argument(
         "--top_p",
